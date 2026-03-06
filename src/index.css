@@ -1,0 +1,164 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 8%;
+
+    --card: 0 0% 98%;
+    --card-foreground: 0 0% 8%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 8%;
+
+    --primary: 25 95% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 8%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+
+    --accent: 25 95% 53%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 91%;
+    --input: 0 0% 91%;
+    --ring: 25 95% 53%;
+
+    --radius: 0.75rem;
+
+    --sand: 36 60% 74%;
+    --sand-dark: 33 45% 58%;
+    --ocean: 200 70% 50%;
+    --ocean-light: 195 60% 70%;
+    --sunset: 15 90% 55%;
+    --palm: 145 50% 42%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 220 15% 7%;
+    --foreground: 0 0% 95%;
+
+    --card: 220 15% 10%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 220 15% 10%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 25 95% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 12% 16%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 220 12% 16%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 25 95% 53%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 12% 18%;
+    --input: 220 12% 18%;
+    --ring: 25 95% 53%;
+
+    --sand: 36 40% 50%;
+    --sand-dark: 33 35% 40%;
+    --ocean: 200 60% 40%;
+    --ocean-light: 195 50% 55%;
+    --sunset: 15 80% 50%;
+    --palm: 145 45% 38%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  .hero-overlay {
+    background: linear-gradient(
+      180deg,
+      hsla(220, 15%, 7%, 0.2) 0%,
+      hsla(220, 15%, 7%, 0.75) 100%
+    );
+  }
+
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-md border border-border/60 shadow-sm;
+  }
+
+  .btn-whatsapp {
+    @apply inline-flex items-center gap-2 bg-[#25D366] text-white font-body font-semibold
+           rounded-lg transition-all duration-300 hover:bg-[#1ebe57] hover:shadow-lg
+           hover:shadow-[#25D366]/30 hover:scale-[1.03] hover:-translate-y-0.5
+           active:scale-[0.97] active:translate-y-0;
+  }
+
+  .btn-animate {
+    @apply transition-all duration-300 hover:scale-[1.03] hover:-translate-y-0.5
+           hover:shadow-lg active:scale-[0.97] active:translate-y-0;
+  }
+
+  .btn-pulse {
+    animation: btn-pulse-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes btn-pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+    50% { box-shadow: 0 0 20px 4px hsl(var(--primary) / 0.25); }
+  }
+
+  .section-label {
+    @apply text-xs sm:text-sm font-body font-medium text-primary tracking-widest uppercase mb-1.5 sm:mb-2;
+  }
+
+  .section-title {
+    @apply text-3xl sm:text-4xl md:text-6xl font-display tracking-wide text-foreground;
+  }
+
+  .input-field {
+    @apply w-full py-3 px-4 rounded-xl border border-border bg-background font-body
+           text-foreground placeholder:text-muted-foreground focus:outline-none
+           focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all;
+  }
+}
