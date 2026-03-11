@@ -70,10 +70,10 @@ const CourtsSection = () => {
           viewport={{ once: true }}
           transition={{ duration: 0.5 }}
         >
-          <p className="section-label">Modalidades</p>
-          <h2 className="section-title">NOSSAS QUADRAS</h2>
+          <p className="section-label">Reserve agora</p>
+          <h2 className="section-title">AGENDAR HORARIO</h2>
           <p className="text-muted-foreground font-body mt-3 max-w-md mx-auto">
-            Escolha sua modalidade favorita e reserve seu horario
+            Escolha uma quadra e reserve seu horario
           </p>
         </motion.div>
 
@@ -82,7 +82,7 @@ const CourtsSection = () => {
             <motion.div
               key={court.id}
               className="group relative rounded-2xl overflow-hidden cursor-pointer bg-card border border-border/50 hover:border-primary/40 transition-all duration-300 hover:shadow-2xl hover:shadow-primary/10 hover:-translate-y-1"
-              onClick={() => navigate(`/agendar/${court.id}`)}
+              onClick={() => navigate("/agendar")}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}

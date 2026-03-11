@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { format, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -7,7 +7,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CalendarIcon, ArrowLeft, Copy, Check, Shield } from "lucide-react";
+import { CalendarIcon, ArrowLeft, Copy, Check, Shield, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   courtNames,
@@ -38,8 +38,25 @@ const isValidPhone = (phone: string): boolean => {
   return digits.length === 10 || digits.length === 11;
 };
 
+const formatDuration = (slotCount: number): string => {
+  const totalMinutes = slotCount * 30;
+  const hours = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  if (hours > 0 && mins > 0) return `${hours}h${mins}min`;
+  if (hours > 0) return `${hours}h`;
+  return `${mins}min`;
+};
+
+const formatBRL = (value: number): string => {
+  if (value % 1 === 0) return `R$ ${value}`;
+  return `R$ ${value.toFixed(2).replace(".", ",")}`;
+};
+
+// Preco base das quadras (por hora)
+const QUADRA_PRICE_PER_HOUR = 45;
+const QUADRA_PRICE_PER_SLOT = QUADRA_PRICE_PER_HOUR / 2; // 22,50 por 30min
+
 const BookingPage = () => {
-  const { courtId } = useParams<{ courtId: string }>();
   const navigate = useNavigate();
   const [date, setDate] = useState<Date>();
   const [selectedTimes, setSelectedTimes] = useState<string[]>([]);
@@ -49,33 +66,24 @@ const BookingPage = () => {
   const [copied, setCopied] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState<DurationOption | null>(null);
   const [selectedSport, setSelectedSport] = useState<Sport | null>(null);
+  const [selectedCourt, setSelectedCourt] = useState<string | null>(null);
 
-  const isSociety = courtId === "society";
-  const isQuadra = !isSociety && courtId?.startsWith("quadra");
-  const courtName = courtNames[courtId || ""] || "Quadra";
-  const pricePerHour = parseInt((courtPrices[courtId || ""] || "R$ 0").replace(/\D/g, ""), 10);
-  const totalPrice = isSociety
-    ? (selectedDuration?.price || "R$ 100")
-    : `R$ ${pricePerHour * selectedTimes.length}`;
   const dateStr = date ? format(date, "yyyy-MM-dd") : "";
 
-  if (!courtNames[courtId || ""]) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-4xl font-display mb-4">Quadra nao encontrada</h1>
-          <Button onClick={() => navigate("/")}>Voltar ao inicio</Button>
-        </div>
-      </div>
-    );
-  }
+  const isSociety = selectedCourt === "society";
+  const courtName = selectedCourt ? courtNames[selectedCourt] || "" : "";
+
+  // Preco preview (antes de escolher quadra, usa preco padrao das quadras)
+  const previewTotal = selectedTimes.length * QUADRA_PRICE_PER_SLOT;
+
+  // Preco final (apos escolher quadra)
+  const totalPrice = isSociety
+    ? (selectedDuration?.price || "R$ 100")
+    : selectedCourt
+    ? formatBRL(parseInt((courtPrices[selectedCourt] || "R$ 0").replace(/\D/g, ""), 10) * selectedTimes.length / 2)
+    : formatBRL(previewTotal);
 
   const handleToggleTime = (t: string) => {
-    if (isSociety) {
-      // Society: single selection only (duration handled separately)
-      setSelectedTimes([t]);
-      return;
-    }
     setSelectedTimes((prev) => {
       if (prev.includes(t)) {
         return prev.filter((x) => x !== t);
@@ -96,12 +104,12 @@ const BookingPage = () => {
       toast.error("Selecione data e horario!");
       return;
     }
-    if (isQuadra && !selectedSport) {
+    if (!selectedSport) {
       toast.error("Selecione o esporte!");
       return;
     }
-    if (isSociety && !selectedDuration) {
-      toast.error("Selecione a duracao!");
+    if (selectedTimes.length < 2) {
+      toast.error("O tempo minimo de reserva e 1 hora (selecione pelo menos 2 horarios)!");
       return;
     }
     setStep(2);
@@ -119,35 +127,50 @@ const BookingPage = () => {
     setStep(3);
   };
 
+  const handleSelectCourt = (courtId: string) => {
+    // Check if all selected times are available for this court
+    const unavailable = selectedTimes.filter((t) => isTimeSlotBooked(courtId, dateStr, t));
+    if (unavailable.length > 0) {
+      toast.error(`Horario(s) ${unavailable.join(", ")} indisponivel(is) nessa quadra!`);
+      return;
+    }
+    setSelectedCourt(courtId);
+    setSelectedDuration(null);
+  };
+
   const handleConfirmBooking = () => {
-    if (!date || selectedTimes.length === 0 || !name || !phone) {
+    if (!date || selectedTimes.length === 0 || !name || !phone || !selectedCourt) {
       toast.error("Preencha todos os campos!");
+      return;
+    }
+    if (isSociety && !selectedDuration) {
+      toast.error("Selecione a duracao!");
       return;
     }
 
     const timeDisplay = selectedTimes.join(", ");
 
     const booking = addBooking({
-      courtId: courtId || "",
+      courtId: selectedCourt,
       courtName,
-      sport: selectedSport || undefined,
+      sport: isSociety ? undefined : (selectedSport || undefined),
       date: dateStr,
       time: timeDisplay,
       name: name.trim(),
       phone,
     });
 
-    const hoursLabel = isSociety
+    const durationLabel = isSociety
       ? (selectedDuration ? `\nDuracao: ${selectedDuration.label}` : "")
-      : (selectedTimes.length > 1 ? ` (${selectedTimes.length} horas)` : "");
+      : ` (${formatDuration(selectedTimes.length)})`;
 
-    const sportInfo = selectedSport ? `\nEsporte: ${selectedSport}` : "";
+    const sportInfo = !isSociety && selectedSport ? `\nEsporte: ${selectedSport}` : "";
 
     const message = encodeURIComponent(
       `Ola! Fiz um agendamento na Alça Beach Arena:\n\n` +
       `Quadra: ${courtName}${sportInfo}\n` +
       `Data: ${format(date, "dd/MM/yyyy")}\n` +
-      `Horario: ${timeDisplay}${hoursLabel}\n` +
+      `Horario: ${timeDisplay}${durationLabel}\n` +
       `Nome: ${name}\n` +
       `Telefone: ${phone}\n` +
       `Valor: ${totalPrice}\n\n` +
@@ -160,7 +183,7 @@ const BookingPage = () => {
     navigate("/");
   };
 
-  const stepLabels = ["Data e Horario", "Seus Dados", "Pagamento"];
+  const stepLabels = ["Data e Horario", "Seus Dados", "Quadra e Pagamento"];
 
   return (
     <div className="min-h-screen bg-background">
@@ -182,13 +205,10 @@ const BookingPage = () => {
           transition={{ duration: 0.5 }}
         >
           <h1 className="text-2xl sm:text-3xl md:text-5xl font-display tracking-wide mb-2">
-            AGENDAR <span className="text-primary">{courtName.toUpperCase()}</span>
+            AGENDAR <span className="text-primary">HORARIO</span>
           </h1>
           <p className="text-muted-foreground font-body text-sm sm:text-base mb-6 sm:mb-8">
-            {isSociety
-              ? <span>A partir de <span className="text-primary font-semibold">R$ 100</span></span>
-              : <span>Valor: <span className="text-primary font-semibold">R$ {pricePerHour}/hora</span> — selecione quantas horas quiser</span>
-            }
+            Quadras: <span className="text-primary font-semibold">R$ {QUADRA_PRICE_PER_HOUR}/hora</span> (R$ {QUADRA_PRICE_PER_SLOT.toFixed(2).replace(".", ",")}/30min) — minimo 1 hora
           </p>
 
           {/* Steps indicator */}
@@ -218,13 +238,14 @@ const BookingPage = () => {
             ))}
           </div>
 
-          {/* Step 1: Date & Time */}
+          {/* Step 1: Date, Sport & Time */}
           {step === 1 && (
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               className="space-y-6"
             >
+              {/* Date */}
               <div>
                 <label className="font-body font-semibold text-sm mb-2 block text-foreground">
                   Selecione a data
@@ -246,7 +267,7 @@ const BookingPage = () => {
                     <Calendar
                       mode="single"
                       selected={date}
-                      onSelect={(d) => { setDate(d); setSelectedTimes([]); setSelectedDuration(null); setSelectedSport(null); }}
+                      onSelect={(d) => { setDate(d); setSelectedTimes([]); setSelectedSport(null); }}
                       disabled={(d) => d < new Date(new Date().setHours(0,0,0,0)) || d > addDays(new Date(), 30)}
                       className="pointer-events-auto"
                     />
@@ -254,7 +275,8 @@ const BookingPage = () => {
                 </Popover>
               </div>
 
-              {isQuadra && date && (
+              {/* Sport */}
+              {date && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                   <label className="font-body font-semibold text-sm mb-3 block text-foreground">
                     Qual esporte?
@@ -278,32 +300,29 @@ const BookingPage = () => {
                 </motion.div>
               )}
 
-              {date && (isQuadra ? selectedSport : true) && (
+              {/* Time slots */}
+              {date && selectedSport && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                   <div className="flex items-center justify-between mb-3">
                     <label className="font-body font-semibold text-sm block text-foreground">
-                      {isSociety ? "Selecione o horario" : "Selecione os horarios"}
+                      Selecione os horarios
                     </label>
-                    {!isSociety && selectedTimes.length > 0 && (
+                    {selectedTimes.length > 0 && (
                       <span className="text-xs font-body font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full">
-                        {selectedTimes.length}h = R$ {pricePerHour * selectedTimes.length}
+                        {formatDuration(selectedTimes.length)} = {formatBRL(selectedTimes.length * QUADRA_PRICE_PER_SLOT)}
                       </span>
                     )}
                   </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                  <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5 sm:gap-2">
                     {timeSlots.map((t) => {
-                      const booked = isTimeSlotBooked(courtId || "", dateStr, t);
                       const isSelected = selectedTimes.includes(t);
                       return (
                         <button
                           key={t}
-                          disabled={booked}
                           onClick={() => handleToggleTime(t)}
                           className={cn(
-                            "py-3 rounded-xl text-sm font-body font-medium transition-all duration-200",
-                            booked
-                              ? "bg-muted text-muted-foreground/30 cursor-not-allowed line-through"
-                              : isSelected
+                            "py-2.5 rounded-xl text-xs sm:text-sm font-body font-medium transition-all duration-200",
+                            isSelected
                               ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30 scale-105"
                               : "bg-card border border-border hover:border-primary/50 hover:text-primary hover:bg-primary/5"
                           )}
@@ -313,49 +332,51 @@ const BookingPage = () => {
                       );
                     })}
                   </div>
-                  {!isSociety && selectedTimes.length > 0 && (
+                  {selectedTimes.length > 0 && selectedTimes.length < 2 && (
+                    <p className="text-xs text-amber-500 font-body mt-2 font-medium">
+                      Selecione pelo menos 2 horarios (minimo 1 hora)
+                    </p>
+                  )}
+                  {selectedTimes.length >= 2 && (
                     <p className="text-xs text-muted-foreground font-body mt-2">
                       Clique novamente para desmarcar um horario
                     </p>
                   )}
-                </motion.div>
-              )}
 
-              {isSociety && date && selectedTimes.length > 0 && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                  <label className="font-body font-semibold text-sm mb-3 block text-foreground">
-                    Duracao
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {societyDurations.map((opt) => (
-                      <button
-                        key={opt.duration}
-                        onClick={() => setSelectedDuration(opt)}
-                        className={cn(
-                          "py-4 px-4 rounded-xl text-sm font-body font-medium transition-all duration-200 text-left",
-                          selectedDuration?.duration === opt.duration
-                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30 scale-[1.02]"
-                            : "bg-card border border-border hover:border-primary/50 hover:bg-primary/5"
-                        )}
-                      >
-                        <span className="block font-semibold">{opt.label}</span>
-                        <span className={cn(
-                          "text-xs mt-0.5 block",
-                          selectedDuration?.duration === opt.duration
-                            ? "text-primary-foreground/80"
-                            : "text-primary"
-                        )}>
-                          {opt.price}
-                        </span>
-                      </button>
-                    ))}
+                  {/* Tabela de precos */}
+                  <div className="mt-4 bg-card border border-border/50 rounded-xl p-3">
+                    <p className="text-xs font-body font-semibold text-foreground mb-2">Tabela de valores (Quadras)</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-body">
+                      {[
+                        { slots: 2, label: "1h" },
+                        { slots: 3, label: "1h30" },
+                        { slots: 4, label: "2h" },
+                        { slots: 5, label: "2h30" },
+                        { slots: 6, label: "3h" },
+                        { slots: 7, label: "3h30" },
+                        { slots: 8, label: "4h" },
+                      ].map(({ slots, label }) => (
+                        <div
+                          key={slots}
+                          className={cn(
+                            "text-center py-1.5 rounded-lg",
+                            selectedTimes.length === slots
+                              ? "bg-primary/15 text-primary font-bold"
+                              : "bg-muted/50 text-muted-foreground"
+                          )}
+                        >
+                          <span className="block font-medium">{label}</span>
+                          <span>{formatBRL(slots * QUADRA_PRICE_PER_SLOT)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </motion.div>
               )}
 
               <Button
                 onClick={handleGoToStep2}
-                disabled={!date || selectedTimes.length === 0 || (isQuadra && !selectedSport) || (isSociety && !selectedDuration)}
+                disabled={!date || selectedTimes.length < 2 || !selectedSport}
                 className="w-full py-6 text-base font-body font-semibold bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl btn-animate hover:shadow-primary/20"
               >
                 Continuar
@@ -363,7 +384,7 @@ const BookingPage = () => {
             </motion.div>
           )}
 
-          {/* Step 2: Info */}
+          {/* Step 2: Customer Info */}
           {step === 2 && (
             <motion.div
               initial={{ opacity: 0, x: 20 }}
@@ -420,100 +441,248 @@ const BookingPage = () => {
             </motion.div>
           )}
 
-          {/* Step 3: PIX + WhatsApp */}
+          {/* Step 3: Court Selection + Availability + Payment */}
           {step === 3 && (
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               className="space-y-6"
             >
-              <div className="glass-card rounded-2xl p-4 sm:p-6">
-                <h3 className="font-display text-xl sm:text-2xl mb-3 sm:mb-4">Resumo do Agendamento</h3>
-                <div className="space-y-3 text-sm font-body">
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Quadra</span>
-                    <span className="font-medium text-foreground">{courtName}</span>
+              {/* Court Selection with Availability */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Clock size={18} className="text-primary" />
+                  <label className="font-body font-semibold text-sm text-foreground">
+                    Escolha a quadra
+                  </label>
+                </div>
+                <p className="text-xs text-muted-foreground font-body mb-4">
+                  Veja a disponibilidade para {date && format(date, "dd/MM/yyyy")} e selecione sua quadra
+                </p>
+
+                <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
+                  {Object.entries(courtNames).map(([id, cName]) => {
+                    const availableSlots = timeSlots.filter(
+                      (t) => !isTimeSlotBooked(id, dateStr, t)
+                    );
+                    const bookedSlots = timeSlots.length - availableSlots.length;
+                    // Check if all selected times are available for this court
+                    const hasConflict = selectedTimes.some((t) => isTimeSlotBooked(id, dateStr, t));
+                    const isSelected = selectedCourt === id;
+
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => handleSelectCourt(id)}
+                        className={cn(
+                          "w-full text-left border rounded-xl p-3 sm:p-4 transition-all duration-200",
+                          isSelected
+                            ? "border-primary bg-primary/5 shadow-lg shadow-primary/10"
+                            : hasConflict
+                            ? "border-border/50 opacity-60"
+                            : "border-border/50 hover:border-primary/40 hover:bg-primary/5"
+                        )}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {isSelected && (
+                              <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                                <Check size={12} className="text-primary-foreground" />
+                              </div>
+                            )}
+                            <span className="font-body font-semibold text-sm text-foreground">{cName}</span>
+                            <span className="text-xs font-body font-semibold text-primary">
+                              {id !== "society"
+                                ? `${courtPrices[id]}/h = ${formatBRL(parseInt(courtPrices[id].replace(/\D/g, ""), 10) * selectedTimes.length / 2)}`
+                                : "A partir de R$ 100"
+                              }
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-body text-muted-foreground">
+                            {availableSlots.length} livres / {bookedSlots} ocupados
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1">
+                          {timeSlots.map((t) => {
+                            const booked = isTimeSlotBooked(id, dateStr, t);
+                            const isMyTime = selectedTimes.includes(t);
+                            return (
+                              <span
+                                key={t}
+                                className={cn(
+                                  "text-[10px] sm:text-xs text-center py-1 rounded-lg font-body",
+                                  booked
+                                    ? "bg-destructive/15 text-destructive/50 line-through"
+                                    : isMyTime
+                                    ? "bg-primary/20 text-primary font-bold ring-1 ring-primary/40"
+                                    : "bg-palm/15 text-palm font-medium"
+                                )}
+                              >
+                                {t}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {hasConflict && !isSelected && (
+                          <p className="text-[10px] text-destructive font-body mt-1.5">
+                            Seus horarios selecionados nao estao todos disponiveis nesta quadra
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-4 mt-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded bg-palm/15 border border-palm/30" />
+                    <span className="text-[10px] font-body text-muted-foreground">Disponivel</span>
                   </div>
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Data</span>
-                    <span className="font-medium text-foreground">{date && format(date, "dd/MM/yyyy")}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded bg-primary/20 border border-primary/40" />
+                    <span className="text-[10px] font-body text-muted-foreground">Seus horarios</span>
                   </div>
-                  {selectedSport && (
-                    <div className="flex justify-between py-2 border-b border-border/50">
-                      <span className="text-muted-foreground">Esporte</span>
-                      <span className="font-medium text-foreground">{selectedSport}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Horario(s)</span>
-                    <span className="font-medium text-foreground">{selectedTimes.join(", ")}</span>
-                  </div>
-                  {!isSociety && selectedTimes.length > 1 && (
-                    <div className="flex justify-between py-2 border-b border-border/50">
-                      <span className="text-muted-foreground">Quantidade</span>
-                      <span className="font-medium text-foreground">{selectedTimes.length} horas</span>
-                    </div>
-                  )}
-                  {isSociety && selectedDuration && (
-                    <div className="flex justify-between py-2 border-b border-border/50">
-                      <span className="text-muted-foreground">Duracao</span>
-                      <span className="font-medium text-foreground">{selectedDuration.label}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Nome</span>
-                    <span className="font-medium text-foreground">{name}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Telefone</span>
-                    <span className="font-medium text-foreground">{phone}</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="text-muted-foreground">Valor total</span>
-                    <span className="text-lg font-bold text-primary">{totalPrice}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded bg-destructive/15 border border-destructive/30" />
+                    <span className="text-[10px] font-body text-muted-foreground">Ocupado</span>
                   </div>
                 </div>
               </div>
 
-              <div className="glass-card rounded-2xl p-4 sm:p-6">
-                <h3 className="font-display text-xl sm:text-2xl mb-1">Pagamento via PIX</h3>
-                <p className="text-sm text-muted-foreground font-body mb-4">
-                  Copie a chave PIX abaixo e faca a transferencia:
-                </p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 bg-muted px-4 py-3 rounded-xl text-sm font-body break-all text-foreground">
-                    {PIX_KEY}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handleCopyPix}
-                    className="shrink-0 h-11 w-11 rounded-xl"
-                  >
-                    {copied ? <Check size={16} className="text-palm" /> : <Copy size={16} />}
-                  </Button>
-                </div>
-              </div>
+              {/* Society Duration (only if society selected) */}
+              {isSociety && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                  <label className="font-body font-semibold text-sm mb-3 block text-foreground">
+                    Duracao
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {societyDurations.map((opt) => (
+                      <button
+                        key={opt.duration}
+                        onClick={() => setSelectedDuration(opt)}
+                        className={cn(
+                          "py-4 px-4 rounded-xl text-sm font-body font-medium transition-all duration-200 text-left",
+                          selectedDuration?.duration === opt.duration
+                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30 scale-[1.02]"
+                            : "bg-card border border-border hover:border-primary/50 hover:bg-primary/5"
+                        )}
+                      >
+                        <span className="block font-semibold">{opt.label}</span>
+                        <span className={cn(
+                          "text-xs mt-0.5 block",
+                          selectedDuration?.duration === opt.duration
+                            ? "text-primary-foreground/80"
+                            : "text-primary"
+                        )}>
+                          {opt.price}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
 
-              <div className="glass-card rounded-2xl p-4 flex items-start gap-3">
-                <Shield size={18} className="text-palm shrink-0 mt-0.5" />
-                <p className="text-xs font-body text-muted-foreground leading-relaxed">
-                  Seu agendamento ficara pendente ate a confirmacao do pagamento pela arena.
-                  Voce recebera a confirmacao pelo WhatsApp.
-                </p>
-              </div>
+              {/* Booking Summary (show after court is selected) */}
+              {selectedCourt && (!isSociety || selectedDuration) && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-6"
+                >
+                  <div className="glass-card rounded-2xl p-4 sm:p-6">
+                    <h3 className="font-display text-xl sm:text-2xl mb-3 sm:mb-4">Resumo do Agendamento</h3>
+                    <div className="space-y-3 text-sm font-body">
+                      <div className="flex justify-between py-2 border-b border-border/50">
+                        <span className="text-muted-foreground">Quadra</span>
+                        <span className="font-medium text-foreground">{courtName}</span>
+                      </div>
+                      <div className="flex justify-between py-2 border-b border-border/50">
+                        <span className="text-muted-foreground">Data</span>
+                        <span className="font-medium text-foreground">{date && format(date, "dd/MM/yyyy")}</span>
+                      </div>
+                      {!isSociety && selectedSport && (
+                        <div className="flex justify-between py-2 border-b border-border/50">
+                          <span className="text-muted-foreground">Esporte</span>
+                          <span className="font-medium text-foreground">{selectedSport}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between py-2 border-b border-border/50">
+                        <span className="text-muted-foreground">Horario(s)</span>
+                        <span className="font-medium text-foreground text-right max-w-[60%]">{selectedTimes.join(", ")}</span>
+                      </div>
+                      {!isSociety && (
+                        <div className="flex justify-between py-2 border-b border-border/50">
+                          <span className="text-muted-foreground">Duracao</span>
+                          <span className="font-medium text-foreground">{formatDuration(selectedTimes.length)}</span>
+                        </div>
+                      )}
+                      {isSociety && selectedDuration && (
+                        <div className="flex justify-between py-2 border-b border-border/50">
+                          <span className="text-muted-foreground">Duracao</span>
+                          <span className="font-medium text-foreground">{selectedDuration.label}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between py-2 border-b border-border/50">
+                        <span className="text-muted-foreground">Nome</span>
+                        <span className="font-medium text-foreground">{name}</span>
+                      </div>
+                      <div className="flex justify-between py-2 border-b border-border/50">
+                        <span className="text-muted-foreground">Telefone</span>
+                        <span className="font-medium text-foreground">{phone}</span>
+                      </div>
+                      <div className="flex justify-between py-2">
+                        <span className="text-muted-foreground">Valor total</span>
+                        <span className="text-lg font-bold text-primary">{totalPrice}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Payment */}
+                  <div className="glass-card rounded-2xl p-4 sm:p-6">
+                    <h3 className="font-display text-xl sm:text-2xl mb-1">Pagamento via PIX</h3>
+                    <p className="text-sm text-muted-foreground font-body mb-4">
+                      Copie a chave PIX abaixo e faca a transferencia:
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 bg-muted px-4 py-3 rounded-xl text-sm font-body break-all text-foreground">
+                        {PIX_KEY}
+                      </code>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={handleCopyPix}
+                        className="shrink-0 h-11 w-11 rounded-xl"
+                      >
+                        {copied ? <Check size={16} className="text-palm" /> : <Copy size={16} />}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="glass-card rounded-2xl p-4 flex items-start gap-3">
+                    <Shield size={18} className="text-palm shrink-0 mt-0.5" />
+                    <p className="text-xs font-body text-muted-foreground leading-relaxed">
+                      Seu agendamento ficara pendente ate a confirmacao do pagamento pela arena.
+                      Voce recebera a confirmacao pelo WhatsApp.
+                    </p>
+                  </div>
+                </motion.div>
+              )}
 
               <div className="flex gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setStep(2)}
+                  onClick={() => { setStep(2); setSelectedCourt(null); setSelectedDuration(null); }}
                   className="flex-1 h-12 font-body rounded-xl btn-animate"
                 >
                   Voltar
                 </Button>
                 <button
                   onClick={handleConfirmBooking}
-                  className="btn-whatsapp btn-pulse flex-1 justify-center py-3 text-base rounded-xl"
+                  disabled={!selectedCourt || (isSociety && !selectedDuration)}
+                  className={cn(
+                    "btn-whatsapp btn-pulse flex-1 justify-center py-3 text-base rounded-xl",
+                    (!selectedCourt || (isSociety && !selectedDuration)) && "opacity-50 pointer-events-none"
+                  )}
                 >
                   <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
                     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
